@@ -24,7 +24,6 @@ import '@tensorflow/tfjs-react-native';
 import { Diagnostic } from './components/diagnostic';
 import { MobilenetDemo } from './components/mobilenet_demo';
 import { TestRunner } from './components/tfjs_unit_test_runner';
-import { WebcamDemo } from './components/webcam/webcam_demo';
 import { RealtimeDemo } from './components/webcam/realtime_demo';
 const BACKEND_TO_USE = 'rn-webgl';
 
@@ -47,7 +46,6 @@ export class App extends React.Component<{}, AppState> {
     this.showDemoScreen = this.showDemoScreen.bind(this);
     this.showMainScreen = this.showMainScreen.bind(this);
     this.showTestScreen = this.showTestScreen.bind(this);
-    this.showWebcamDemo= this.showWebcamDemo.bind(this);
     this.showRealtimeDemo= this.showRealtimeDemo.bind(this);
   }
 
@@ -75,9 +73,6 @@ export class App extends React.Component<{}, AppState> {
     this.setState({ currentScreen: 'test' });
   }
 
-  showWebcamDemo() {
-    this.setState({ currentScreen: 'webcam' });
-  }
 
   showRealtimeDemo() {
     this.setState({ currentScreen: 'realtime' });
@@ -106,13 +101,6 @@ export class App extends React.Component<{}, AppState> {
           accessibilityLabel='unit-test-btn'
           onPress={this.showTestScreen}
           title='Show Test Screen'
-        />
-      </View>
-      <View style={styles.sectionContainer}>
-        <Text style={styles.sectionTitle}>Webcam Demo</Text>
-        <Button
-          onPress={this.showWebcamDemo}
-          title='Show Webcam Demo'
         />
       </View>
       <View style={styles.sectionContainer}>

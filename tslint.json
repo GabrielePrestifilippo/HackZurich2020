@@ -1,7 +1,5 @@
 {
-  "extends": "../../tslint.json",
   "rules": {
     "no-require-imports": false
   }
-  
 }

@@ -1,37 +1,30 @@
-/**
- * @license
- * Copyright 2020 Google LLC. All Rights Reserved.
- * Licensed under the Apache License, Version 2.0 (the 'License');
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an 'AS IS' BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- * =============================================================================
- */
-
-import React, {Fragment} from 'react';
-import {ActivityIndicator, Button, StyleSheet, View, Platform, Text } from 'react-native';
+import React from 'react';
+import {
+  ActivityIndicator,
+  Image,
+  Button,
+  StyleSheet,
+  View,
+  Text,
+  Dimensions,
+  TouchableHighlight
+} from 'react-native';
 import Svg, { Circle, Rect, G, Line} from 'react-native-svg';
 
 import * as Permissions from 'expo-permissions';
 import { Camera } from 'expo-camera';
 import { ExpoWebGLRenderingContext } from 'expo-gl';
-
 import * as tf from '@tensorflow/tfjs';
-import * as blazeface from '@tensorflow-models/blazeface';
 import * as cocoSsd from '@tensorflow-models/coco-ssd';
 import {cameraWithTensors} from '@tensorflow/tfjs-react-native';
 interface ScreenProps {
   returnToMain: () => void;
 }
 
+const {width, height}= Dimensions.get('window')
 interface ScreenState {
+  finished: any,
+  log: any,
   hasCameraPermission?: boolean;
   // tslint:disable-next-line: no-any
   cameraType: any;
@@ -42,10 +35,9 @@ interface ScreenState {
   faceDetector?: any;
   modelName: string;
 }
-
+const litters = ['bottle', 'can', 'cup']
 const inputTensorWidth = 152;
 const inputTensorHeight = 200;
-
 const AUTORENDER = true;
 
 // tslint:disable-next-line: variable-name
@@ -57,6 +49,9 @@ export class RealtimeDemo extends React.Component<ScreenProps,ScreenState> {
   constructor(props: ScreenProps) {
     super(props);
     this.state = {
+      finished:null,
+      log: null,
+      resultImage: null,
       isLoading: true,
       cameraType: Camera.Constants.Type.back,
       modelName: 'cocoSsd',
@@ -72,26 +67,28 @@ export class RealtimeDemo extends React.Component<ScreenProps,ScreenState> {
     return model;
   }
 
-  async loadBlazefaceModel() {
-    const model =  await blazeface.load();
-    return model;
-  }
-
   async handleImageTensorReady(
     images: IterableIterator<tf.Tensor3D>,
     updatePreview: () => void, gl: ExpoWebGLRenderingContext) {
+    if(this.state.finished!=null) {
+      return
+    }
     const loop = async () => {
+
+
       if(!AUTORENDER) {
         updatePreview();
       }
 
-        if (this.state.cocossdModel != null) {
+        if (this.state.cocossdModel != null && this.state.finished===null) {
           const imageTensor = images.next().value;
-          const predictions = await this.state.cocossdModel.detect(
-            imageTensor );
+          const predictions = await this.state.cocossdModel.detect(imageTensor);
+            const litterFound =
+                predictions?.filter(({score, class: type})=>score>0.75 && litters.includes(type));
 
-          console.log('xxx predictions:', predictions);
-          this.setState({predictions});
+            if(litterFound[0]){
+              this.setState({finished:litterFound[0].class})
+            }
           tf.dispose([imageTensor]);
         }
 
@@ -113,13 +110,11 @@ export class RealtimeDemo extends React.Component<ScreenProps,ScreenState> {
   async componentDidMount() {
     const { status } = await Permissions.askAsync(Permissions.CAMERA);
 
-    const [blazefaceModel, cocossdModel] =
-      await Promise.all([this.loadBlazefaceModel(), this.loadCocossdModel()]);
-
+    const [cocossdModel] =
+      await Promise.all([this.loadCocossdModel()]);
     this.setState({
       hasCameraPermission: status === 'granted',
       isLoading: false,
-      faceDetector: blazefaceModel,
       cocossdModel,
     });
   }
@@ -128,7 +123,7 @@ export class RealtimeDemo extends React.Component<ScreenProps,ScreenState> {
   renderBox() {
     const {predictions} = this.state;
     if(predictions != null) {
-      const faceBoxes = predictions.map((prediction) => {
+      const bottleBox = predictions.map((prediction) => {
 
       if(!prediction.bbox[3]){
         return
@@ -139,22 +134,21 @@ export class RealtimeDemo extends React.Component<ScreenProps,ScreenState> {
         const height = prediction.bbox[3];
 
           return <Rect
+              key={x+y}
               x={x}
               y={y}
               width={width}
               height={height}
-              fill="rgb(0,0,255)"
-              strokeWidth="3"
-              stroke="rgb(0,0,0)"
+              fill="rgb(0,0,255,0.2)"
+              strokeWidth="1"
+              stroke="rgb(0,0,0,0.01)"
           />
         });
 
-
-      const flipHorizontal = Platform.OS === 'ios' ? 1 : -1;
       return <Svg height='100%' width='100%'
                   viewBox={`0 0 ${inputTensorWidth} ${inputTensorHeight}`}
                   scaleX={1}>
-        {faceBoxes}
+        {bottleBox}
       </Svg>;
     } else {
       return null;
@@ -162,29 +156,22 @@ export class RealtimeDemo extends React.Component<ScreenProps,ScreenState> {
   }
 
   render() {
-    const {isLoading, predictions} = this.state;
+    const {isLoading, log, finished} = this.state;
 
-    // TODO File issue to be able get this from expo.
-    // Caller will still need to account for orientation/phone rotation changes
     let textureDims: { width: number; height: number; };
-    if (Platform.OS === 'ios') {
-        textureDims = {
-          height: 1920,
-          width: 1080,
-        };
-      } else {
         textureDims = {
           height: 1200,
           width: 1600,
-        };
-      }
+      };
 
     const camView = <View style={styles.cameraContainer}>
-      <TensorCamera
+
+      {!isLoading? <TensorCamera
         // Standard Camera props
         style={styles.camera}
         type={this.state.cameraType}
         zoom={0}
+        flashMode={finished? 'auto':'torch'}
         // tensor related props
         cameraTextureHeight={textureDims.height}
         cameraTextureWidth={textureDims.width}
@@ -193,32 +180,73 @@ export class RealtimeDemo extends React.Component<ScreenProps,ScreenState> {
         resizeDepth={3}
         onReady={this.handleImageTensorReady}
         autorender={AUTORENDER}
-      />
-      <View style={styles.modelResults}>
-      {this.renderBox()}
-      </View>
+      />: <View></View>}
+        <View style={styles.modelResults}>
+          {this.renderBox()}
+        </View>
     </View>;
 
+    if(isLoading){
+      return (
+          <View style={{
+            backgroundColor:'#ececec',
+            flex:1,
+            flexDirection:'row',
+            alignItems:'center',
+            justifyContent:'center'}}>
+          <View style={styles.loadingIndicator}>
+            <ActivityIndicator size='large' color='#FF0266' />
+          </View>
+          </View>
+      )
+    }
+
     return (
-      <View style={{width:'100%'}}>
-        <View style={styles.sectionContainer}>
-          <Button
-            onPress={this.props.returnToMain}
-            title='Back'
-          />
-          {predictions?.map(({score, class: type})=>(
-              <View key={score}>
-                <Text  style={{color:'black'}}>Class: type</Text>
-                <Text  style={{color:'black'}}>Score: score</Text>
-              </View>
-          ))}
+      <View style={{width:'100%', backgroundColor:'white'}}>
+        {finished != null ? <View style={{
+          flexDirection:'row',
+          alignItems:'center',
+          justifyContent:'center',
+          width:400,
+          height:800,
+        }}>
+          <View style={{
+            alignItems:'center',
+            justifyContent:'center',
+            alignSelf:'center',
+            width:300,
+            height:200,
+            borderRadius:4,
+            top: -50,
+            padding:20,
+            backgroundColor:'rgba(20,200,255,0.8)'}}>
+            <Text style={{fontSize:22, color:'white', textAlign:'center'}}>Great! you found a {finished}</Text>
+            <TouchableHighlight
+                style={{
+                  width:200,
+                  height:50,
+                  top:20,
+              backgroundColor:'#7bec8e',
+              borderRadius:2,
+            }}
+                onPress={() => this.setState({finished:null})}
+            >
+              <Text style={{
+                textAlign:'center',
+                color:'white',
+                top:10,
+                fontWeight: 'bold',
+                fontSize:20
+              }}>Continue</Text>
+            </TouchableHighlight>
+          </View>
+        </View>:  null}
+        {log?.length ?
+        <Text style={{backgroundColor:'rgba(0,0,0,0.2)'}}>
+          {log}
+        </Text>: null}
 
-        </View>
-        {isLoading ? <View style={[styles.loadingIndicator]}>
-          <ActivityIndicator size='large' color='#FF0266' />
-        </View> : camView}
-
-
+        {camView}
       </View>
     );
   }
@@ -228,9 +256,8 @@ export class RealtimeDemo extends React.Component<ScreenProps,ScreenState> {
 const styles = StyleSheet.create({
   loadingIndicator: {
     position: 'absolute',
-    top: 20,
-    right: 20,
     zIndex: 200,
+    top:300,
   },
   sectionContainer: {
     marginTop: 32,
@@ -247,24 +274,16 @@ const styles = StyleSheet.create({
   },
   camera : {
     position:'absolute',
-    left: 50,
-    top: 100,
-    width: 600/2,
-    height: 800/2,
-    zIndex: 1,
-    borderWidth: 1,
-    borderColor: 'black',
-    borderRadius: 0,
+    // top: 100,
+    width: width,
+    height: height,
+    zIndex: 0,
   },
   modelResults: {
     position:'absolute',
-    left: 50,
-    top: 100,
-    width: 600/2,
-    height: 800/2,
-    zIndex: 20,
-    borderWidth: 1,
-    borderColor: 'black',
-    borderRadius: 0,
+    // top: 100,
+    width: width,
+    height: height,
+    zIndex: 99,
   }
 });
